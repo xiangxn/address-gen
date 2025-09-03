@@ -34,6 +34,12 @@
 - 使用 @solana/web3.js 生成 Solana 钱包地址。
 - 使用 @ethereumjs/wallet 生成 EVM 地址。
 
+## 运行环境:
+- 安装nodejs 18.0.0+。
+- 安装yarn 4.5.2+。
+- 运行 yarn install 安装依赖。
+- 运行 yarn start 启动程序。
+
 ## 命令例子:
 ```
 yarn start -g -n 10 -f 234.csv -T sol
