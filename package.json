@@ -1,5 +1,5 @@
 {
-  "name": "sol-gen",
+  "name": "address-gen",
   "type": "module",
   "packageManager": "yarn@4.5.2",
   "engines": {
