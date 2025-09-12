@@ -108,17 +108,18 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
     while (currentIndex < addresses.length) {
         const currentAddress = addresses[currentIndex];
         const wallet = new ethers.Wallet(currentAddress.privateKey, provider);
+        let bnbBalance, tokenBalance, tokenContract
 
         try {
             // 查询Token余额
-            const tokenContract = new ethers.Contract(
+            tokenContract = new ethers.Contract(
                 config.tokenAddress,
                 ["function balanceOf(address) view returns (uint256)"],
                 provider
             );
 
             // 查询BNB余额/Token余额
-            const [bnbBalance, tokenBalance] = await Promise.all([
+            [bnbBalance, tokenBalance] = await Promise.all([
                 provider.getBalance(currentAddress.address),
                 tokenContract.balanceOf(currentAddress.address)
             ]);
@@ -128,7 +129,6 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
             await new Promise(resolve => setTimeout(resolve, 5 * 1000));
             continue;
         }
-
         // if (tokenBalance > BigInt(0) && tokenBalance <= ethers.parseEther(config.minTokenBalance)) {
         //     // 如果token余额大于0，小于等于配置值，就跳过
         //     currentIndex = Math.floor(Math.random() * addresses.length);
