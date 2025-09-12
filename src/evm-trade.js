@@ -108,7 +108,6 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
     while (currentIndex < addresses.length) {
         const currentAddress = addresses[currentIndex];
         const wallet = new ethers.Wallet(currentAddress.privateKey, provider);
-        let notTrade = false;
 
         // 查询Token余额
         const tokenContract = new ethers.Contract(
@@ -123,6 +122,15 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
             tokenContract.balanceOf(currentAddress.address)
         ]);
         console.warn(`地址 ${currentAddress.address} BNB余额: ${ethers.formatEther(bnbBalance)}, Token余额: ${ethers.formatEther(tokenBalance)}`);
+
+        // if (tokenBalance > BigInt(0) && tokenBalance <= ethers.parseEther(config.minTokenBalance)) {
+        //     // 如果token余额大于0，小于等于配置值，就跳过
+        //     currentIndex = Math.floor(Math.random() * addresses.length);
+        //     console.log(`地址 ${currentAddress.address} Token余额进入最小保留区间 ${config.minTokenBalance}, 跳过`);
+        //     await new Promise(resolve => setTimeout(resolve, 1000));
+        //     continue;
+        // }
+
         // 逻辑分支
         if (bnbBalance <= ethers.parseEther(config.minBnbBalance)) {
             // 如果是起始地址且BNB余额小于等于配置值，就退出
@@ -130,51 +138,53 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
                 console.log(`地址 ${currentAddress.address} BNB余额不足 ${config.minBnbBalance}, 停止交易`);
                 break;
             }
+
             // 没有BNB余额，从前一个地址转入
-            if (currentIndex > 0) {
-                const prevAddress = addresses[lastAddressIndex];
-                const prevWallet = new ethers.Wallet(prevAddress.privateKey, provider);
+            const prevAddress = addresses[lastAddressIndex];
+            const prevWallet = new ethers.Wallet(prevAddress.privateKey, provider);
 
-                const [prevBalance, feeData] = await Promise.all([provider.getBalance(prevAddress.address), provider.getFeeData()]);
+            const [prevBalance, feeData] = await Promise.all([provider.getBalance(prevAddress.address), provider.getFeeData()]);
 
-                // 检查前一个地址的BNB余额是否足够
-                if (prevBalance <= ethers.parseEther(config.minBnbBalance)) {
-                    console.log(`前一个地址 ${prevAddress.address} BNB余额不足 ${config.minBnbBalance}, 停止交易`);
-                    break;
-                }
+            // 检查前一个地址的BNB余额是否足够
+            if (prevBalance <= ethers.parseEther(config.minBnbBalance)) {
+                console.log(`前一个地址 ${prevAddress.address} BNB余额不足 ${config.minBnbBalance}, 停止交易`);
+                break;
+            }
 
-                // 扣除Gas后全额转入
-                const gasPrice = feeData.gasPrice;
-                const gasLimit = BigInt(21000);
-                const gasCost = gasPrice * gasLimit;
-                const amount = prevBalance - gasCost;
+            // 扣除Gas后全额转入
+            const gasPrice = feeData.gasPrice;
+            const gasLimit = BigInt(21000);
+            const gasCost = gasPrice * gasLimit;
+            const amount = prevBalance - gasCost;
 
-                if (amount > BigInt(0)) {
-                    const tx = {
-                        to: currentAddress.address,
-                        value: amount,
-                        gasLimit,
-                        gasPrice
-                    };
+            if (amount > BigInt(0)) {
+                const tx = {
+                    to: currentAddress.address,
+                    value: amount,
+                    gasLimit,
+                    gasPrice
+                };
 
-                    try {
-                        const txResponse = await prevWallet.sendTransaction(tx);
-                        await txResponse.wait();
-                        lastAddressIndex = currentIndex;
-                        console.info(`转入BNB成功: ${txResponse.hash}`);
-                    } catch (error) {
-                        console.error(`转入BNB失败: ${error.message}`);
-                    }
+                try {
+                    const txResponse = await prevWallet.sendTransaction(tx);
+                    await txResponse.wait();
+                    lastAddressIndex = currentIndex;
+                    console.info(`转入BNB成功: ${txResponse.hash}`);
+                } catch (error) {
+                    console.error(`转入BNB失败: ${error.message}`);
                 }
             }
         }
-        if (tokenBalance === BigInt(0)) {
+        if (tokenBalance === BigInt(0) || tokenBalance < ethers.parseEther(config.minTokenBalance)) {
             // 有BNB但没有Token，随机购买Token
             const amount = ethers.parseEther(
                 (Math.random() * (config.amountRange[1] - config.amountRange[0]) + config.amountRange[0]).toFixed(10)
             );
 
             try {
+                if (lastAddressIndex === null) {
+                    lastAddressIndex = currentIndex;
+                }
                 const txResponse = await buyToken(wallet, amount, config);
                 console.info(`购买Token ${ethers.formatEther(amount)} 成功: ${txResponse.hash}`);
             } catch (error) {
@@ -191,14 +201,16 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
                 if (bnbBalance > BigInt(0)) {
                     lastAddressIndex = currentIndex;
                 }
-                notTrade = true;
                 console.log(`保留值 ${ethers.formatEther(keepAmount)} 大于余额 ${ethers.formatEther(tokenBalance)}, 不交易`);
             } else if (keepAmount === BigInt(0)) {
-                // 如果保留值为0，全部卖出
+                // 如果保留值为0, 全部卖出
                 const sellAmount = tokenBalance;
                 try {
+                    if (lastAddressIndex === null) {
+                        lastAddressIndex = currentIndex;
+                    }
                     const txResponse = await sellToken(wallet, sellAmount);
-                    console.info(`卖出Token ${ethers.formatEther(sellAmount)} 成功: ${txResponse.hash}`);
+                    console.info(`全部卖出Token ${ethers.formatEther(sellAmount)} 成功: ${txResponse.hash}`);
                 } catch (error) {
                     console.error(`卖出Token失败: ${error.message}`);
                 }
@@ -206,8 +218,11 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
                 // 保留部分，卖出其余
                 const sellAmount = tokenBalance - keepAmount;
                 try {
+                    if (lastAddressIndex === null) {
+                        lastAddressIndex = currentIndex;
+                    }
                     const txResponse = await sellToken(wallet, sellAmount, config);
-                    console.info(`卖出Token ${ethers.formatEther(sellAmount)} 成功: ${txResponse.hash}`);
+                    console.info(`部分卖出Token ${ethers.formatEther(sellAmount)} 成功: ${txResponse.hash}`);
                 } catch (error) {
                     console.error(`卖出Token失败: ${error.message}`);
                 }
@@ -218,11 +233,9 @@ export async function startEvmTrading(configPath, addressCSV, startAddress) {
         currentIndex = Math.floor(Math.random() * addresses.length);
 
         // 添加交易间隔（从区间中随机选择）
-        if (!notTrade) {
-            const randomInterval = Math.floor(Math.random() * (config.interval[1] - config.interval[0] + 1)) + config.interval[0];
-            console.log(`交易完成，等待 ${randomInterval} 秒...`);
-            await new Promise(resolve => setTimeout(resolve, randomInterval * 1000));
-        }
+        const randomInterval = Math.floor(Math.random() * (config.interval[1] - config.interval[0] + 1)) + config.interval[0];
+        console.log(`交易完成，等待 ${randomInterval} 秒...`);
+        await new Promise(resolve => setTimeout(resolve, randomInterval * 1000));
     }
 }
 
