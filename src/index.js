@@ -2,6 +2,7 @@
 import { Command,Option } from "commander";
 import { generateSolAddresses, generateEvmAddresses } from "./generate.js";
 import { startEvmTrading, collectEvmFunds } from "./evm-trade.js";
+import { statEvmAddresses } from "./evm-statistics.js";
 import bip39 from "bip39";
 import "./console.js"
 
@@ -86,6 +87,24 @@ program
             await collectEvmFunds(options.config, options.file);
         } else {
             console.error("❌ 目前仅支持 EVM 链资金归集");
+            process.exit(1);
+        }
+    });
+
+// 统计功能
+program
+    .command("stat")
+    .description("统计地址余额")
+    .requiredOption("--config <path>", "交易配置文件路径")
+    .requiredOption("--file <path>", "地址 CSV 文件路径")
+    .option("--token <address>", "要统计的 Token 合约地址")
+    .option("-T, --type <string>", "地址类型 (sol/evm)", "evm")
+    .action(async (options) => {
+        if (options.type === "evm") {
+            console.log("\n📊 开始统计 EVM 地址余额...");
+            await statEvmAddresses(options.config, options.file, options.token);
+        } else {
+            console.error("❌ 目前仅支持 EVM 链统计");
             process.exit(1);
         }
     });
